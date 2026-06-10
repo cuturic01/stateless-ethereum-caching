@@ -33,7 +33,7 @@ def parse_read_set(trace: list) -> list[Key]:
 
 
 def parse_write_set(trace: list) -> list[Key]:
-   keys: set[Key] = set()
+    keys: set[Key] = set()
     for diff in _unwrap_tx_entries(trace):
         if not diff:
             continue
