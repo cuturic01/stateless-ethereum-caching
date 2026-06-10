@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 
 import aiohttp
+import certifi
 import orjson
 from tenacity import (
     AsyncRetrying,
@@ -59,8 +61,14 @@ class AlchemyRPC:
         self.retry_count = 0
 
     async def __aenter__(self) -> AlchemyRPC:
+        # Use certifi's CA bundle explicitly so TLS verification works regardless
+        # of the host's certificate setup (notably python.org Python on macOS,
+        # which does not read the system trust store).
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         self._session = aiohttp.ClientSession(
             timeout=self._timeout,
+            connector=connector,
             json_serialize=lambda o: orjson.dumps(o).decode(),
         )
         return self

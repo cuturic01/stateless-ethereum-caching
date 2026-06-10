@@ -37,3 +37,4 @@ data/checkpoint.json
 analytics/out/
 results/series/
 
+data/scrape.log
