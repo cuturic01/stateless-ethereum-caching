@@ -36,5 +36,6 @@ data/shards/
 data/checkpoint.json
 analytics/out/
 results/series/
+results/contracts/
 
 data/scrape.log
