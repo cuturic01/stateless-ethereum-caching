@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 
-use caching_strategies::config::DEFAULT_BYTES_PER_KEY;
 use caching_strategies::loader::ShardStream;
 use caching_strategies::manifest::Manifest;
 use caching_strategies::sweep::{run_sweep, SweepConfig};
@@ -32,8 +31,6 @@ enum Command {
         strata: PathBuf,
         #[arg(long, default_value = "../results")]
         out: PathBuf,
-        #[arg(long, default_value_t = DEFAULT_BYTES_PER_KEY)]
-        bytes_per_key: u32,
         #[arg(long, default_value_t = false)]
         verify_sha: bool,
         #[arg(long)]
@@ -45,13 +42,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::VerifyLoad { data, verify_sha } => verify_load(&data, verify_sha),
-        Command::Run { data, stats, strata, out, bytes_per_key, verify_sha, threads } => {
+        Command::Run { data, stats, strata, out, verify_sha, threads } => {
             run_sweep(&SweepConfig {
                 data_dir: data,
                 stats_path: stats,
                 strata_path: strata,
                 out_dir: out,
-                bytes_per_key,
                 verify_sha,
                 threads,
             })

@@ -55,7 +55,6 @@ pub struct SweepConfig {
     pub stats_path: PathBuf,
     pub strata_path: PathBuf,
     pub out_dir: PathBuf,
-    pub bytes_per_key: u32,
     pub verify_sha: bool,
     pub threads: Option<usize>,
 }
@@ -135,7 +134,6 @@ pub fn run_sweep(cfg: &SweepConfig) -> Result<()> {
 
     let series_dir = cfg.out_dir.join("series");
     let contracts_dir = cfg.out_dir.join("contracts");
-    let bpk = cfg.bytes_per_key;
 
     let mut summaries: Vec<RunSummary> = states
         .par_iter()
@@ -144,7 +142,7 @@ pub fn run_sweep(cfg: &SweepConfig) -> Result<()> {
             for (idx, stratum) in StratumKind::ALL.iter().enumerate() {
                 let id = st.spec.run_ids[idx];
                 let m = &st.metrics[idx];
-                write_series_parquet(&series_dir.join(format!("run_{id}.parquet")), &m.series, bpk)
+                write_series_parquet(&series_dir.join(format!("run_{id}.parquet")), &m.series)
                     .with_context(|| format!("writing series for run {id}"))?;
                 let top = m.contracts.top_k(TOP_CONTRACTS);
                 write_contracts_parquet(&contracts_dir.join(format!("run_{id}.parquet")), &top)
@@ -156,7 +154,6 @@ pub fn run_sweep(cfg: &SweepConfig) -> Result<()> {
                     st.spec.capacity_pct,
                     st.spec.capacity_entries as u64,
                     stratum.name(),
-                    bpk,
                     m,
                 ));
             }

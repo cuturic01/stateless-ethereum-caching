@@ -21,7 +21,6 @@ pub struct RunSummary {
     pub capacity_pct: u32,
     pub capacity_entries: u64,
     pub stratum: String,
-    pub bytes_per_key: u32,
     pub blocks_counted: u64,
     pub total_reads: u64,
     pub total_hits: u64,
@@ -32,9 +31,11 @@ pub struct RunSummary {
     pub peak_occupancy: u64,
     pub mean_survival: f64,
     pub survival_buckets: [u64; SURVIVAL_BUCKETS],
-    pub bytes_witnessed: u64,
+    pub bytes_sent: u64,
     pub bytes_saved: u64,
     pub bytes_naive: u64,
+    pub floor_bytes: u64,
+    pub cacheable_fraction: f64,
 }
 
 impl RunSummary {
@@ -46,10 +47,8 @@ impl RunSummary {
         capacity_pct: u32,
         capacity_entries: u64,
         stratum: &str,
-        bytes_per_key: u32,
         m: &RunMetrics,
     ) -> Self {
-        let bpk = bytes_per_key as u64;
         RunSummary {
             run_id,
             policy: policy.to_string(),
@@ -57,20 +56,21 @@ impl RunSummary {
             capacity_pct,
             capacity_entries,
             stratum: stratum.to_string(),
-            bytes_per_key,
             blocks_counted: m.blocks_counted,
             total_reads: m.total_reads,
             total_hits: m.total_hits,
             total_misses: m.total_misses,
             overall_hit_rate: m.overall_hit_rate(),
-            overall_compression_ratio: m.overall_hit_rate(),
+            overall_compression_ratio: m.overall_compression_ratio(),
             total_invalidations: m.total_invalidations,
             peak_occupancy: m.peak_occupancy,
             mean_survival: m.survival.mean(),
             survival_buckets: m.survival.buckets,
-            bytes_witnessed: m.total_misses * bpk,
-            bytes_saved: m.total_hits * bpk,
-            bytes_naive: m.total_reads * bpk,
+            bytes_sent: m.total_witness_bytes_sent,
+            bytes_saved: m.total_bytes_saved,
+            bytes_naive: m.total_witness_bytes_naive,
+            floor_bytes: m.total_noncacheable_floor_bytes,
+            cacheable_fraction: m.cacheable_fraction(),
         }
     }
 }
@@ -101,7 +101,6 @@ pub fn write_runs_parquet(path: &Path, rows: &[RunSummary]) -> Result<()> {
         Field::new("capacity_pct", DataType::UInt32, false),
         Field::new("capacity_entries", DataType::UInt64, false),
         Field::new("stratum", DataType::Utf8, false),
-        Field::new("bytes_per_key", DataType::UInt32, false),
         Field::new("blocks_counted", DataType::UInt64, false),
         Field::new("total_reads", DataType::UInt64, false),
         Field::new("total_hits", DataType::UInt64, false),
@@ -115,9 +114,11 @@ pub fn write_runs_parquet(path: &Path, rows: &[RunSummary]) -> Result<()> {
     for i in 0..SURVIVAL_BUCKETS {
         fields.push(Field::new(format!("survival_b{i}"), DataType::UInt64, false));
     }
-    fields.push(Field::new("bytes_witnessed", DataType::UInt64, false));
+    fields.push(Field::new("bytes_sent", DataType::UInt64, false));
     fields.push(Field::new("bytes_saved", DataType::UInt64, false));
     fields.push(Field::new("bytes_naive", DataType::UInt64, false));
+    fields.push(Field::new("floor_bytes", DataType::UInt64, false));
+    fields.push(Field::new("cacheable_fraction", DataType::Float64, false));
     let schema = Arc::new(Schema::new(fields));
 
     let mut cols: Vec<ArrayRef> = vec![
@@ -127,7 +128,6 @@ pub fn write_runs_parquet(path: &Path, rows: &[RunSummary]) -> Result<()> {
         Arc::new(UInt32Array::from_iter_values(rows.iter().map(|r| r.capacity_pct))),
         Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.capacity_entries))),
         Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.stratum.clone()))),
-        Arc::new(UInt32Array::from_iter_values(rows.iter().map(|r| r.bytes_per_key))),
         Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.blocks_counted))),
         Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.total_reads))),
         Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.total_hits))),
@@ -143,24 +143,27 @@ pub fn write_runs_parquet(path: &Path, rows: &[RunSummary]) -> Result<()> {
             rows.iter().map(|r| r.survival_buckets[i]),
         )));
     }
-    cols.push(Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.bytes_witnessed))));
+    cols.push(Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.bytes_sent))));
     cols.push(Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.bytes_saved))));
     cols.push(Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.bytes_naive))));
+    cols.push(Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.floor_bytes))));
+    cols.push(Arc::new(Float64Array::from_iter_values(rows.iter().map(|r| r.cacheable_fraction))));
 
     let batch = RecordBatch::try_new(schema, cols)?;
     write_batch(path, &batch)
 }
 
-pub fn write_series_parquet(path: &Path, samples: &[BlockSample], bytes_per_key: u32) -> Result<()> {
-    let bpk = bytes_per_key as u64;
+pub fn write_series_parquet(path: &Path, samples: &[BlockSample]) -> Result<()> {
     let schema = Arc::new(Schema::new(vec![
         Field::new("block_number", DataType::UInt64, false),
         Field::new("reads", DataType::UInt32, false),
         Field::new("hits", DataType::UInt32, false),
         Field::new("misses", DataType::UInt32, false),
         Field::new("block_hit_rate", DataType::Float64, false),
-        Field::new("bytes_witnessed", DataType::UInt64, false),
+        Field::new("bytes_sent", DataType::UInt64, false),
         Field::new("bytes_saved", DataType::UInt64, false),
+        Field::new("bytes_naive", DataType::UInt64, false),
+        Field::new("floor_bytes", DataType::UInt64, false),
         Field::new("invalidations", DataType::UInt32, false),
         Field::new("occupancy", DataType::UInt64, false),
     ]));
@@ -172,8 +175,10 @@ pub fn write_series_parquet(path: &Path, samples: &[BlockSample], bytes_per_key:
         Arc::new(Float64Array::from_iter_values(samples.iter().map(|s| {
             if s.reads == 0 { 0.0 } else { s.hits as f64 / s.reads as f64 }
         }))),
-        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.misses as u64 * bpk))),
-        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.hits as u64 * bpk))),
+        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.witness_sent))),
+        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.bytes_saved))),
+        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.witness_naive))),
+        Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.floor))),
         Arc::new(UInt32Array::from_iter_values(samples.iter().map(|s| s.invalidations))),
         Arc::new(UInt64Array::from_iter_values(samples.iter().map(|s| s.occupancy))),
     ];

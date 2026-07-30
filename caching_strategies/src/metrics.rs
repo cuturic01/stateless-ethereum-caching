@@ -1,5 +1,6 @@
 use crate::hash::FastMap;
 use crate::model::Address;
+use crate::witness::BlockWitnessBytes;
 
 pub const SURVIVAL_BUCKETS: usize = 14;
 
@@ -61,6 +62,10 @@ pub struct BlockSample {
     pub misses: u32,
     pub invalidations: u32,
     pub occupancy: u64,
+    pub witness_naive: u64,
+    pub witness_sent: u64,
+    pub bytes_saved: u64,
+    pub floor: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -74,6 +79,10 @@ pub struct RunMetrics {
     pub survival: SurvivalHistogram,
     pub contracts: ContractInvalidations,
     pub series: Vec<BlockSample>,
+    pub total_witness_bytes_naive: u64,
+    pub total_witness_bytes_sent: u64,
+    pub total_bytes_saved: u64,
+    pub total_noncacheable_floor_bytes: u64,
 }
 
 impl RunMetrics {
@@ -86,6 +95,7 @@ impl RunMetrics {
         self.total_invalidations += 1;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record_block(
         &mut self,
         block_number: u64,
@@ -94,12 +104,17 @@ impl RunMetrics {
         misses: u32,
         invalidations: u32,
         occupancy: u64,
+        wb: BlockWitnessBytes,
     ) {
         self.blocks_counted += 1;
         self.total_reads += reads as u64;
         self.total_hits += hits as u64;
         self.total_misses += misses as u64;
         self.peak_occupancy = self.peak_occupancy.max(occupancy);
+        self.total_witness_bytes_naive += wb.naive;
+        self.total_witness_bytes_sent += wb.sent;
+        self.total_bytes_saved += wb.saved;
+        self.total_noncacheable_floor_bytes += wb.floor;
         self.series.push(BlockSample {
             block_number,
             reads,
@@ -107,6 +122,10 @@ impl RunMetrics {
             misses,
             invalidations,
             occupancy,
+            witness_naive: wb.naive,
+            witness_sent: wb.sent,
+            bytes_saved: wb.saved,
+            floor: wb.floor,
         });
     }
 
@@ -115,6 +134,23 @@ impl RunMetrics {
             0.0
         } else {
             self.total_hits as f64 / self.total_reads as f64
+        }
+    }
+
+    pub fn overall_compression_ratio(&self) -> f64 {
+        if self.total_witness_bytes_naive == 0 {
+            0.0
+        } else {
+            self.total_bytes_saved as f64 / self.total_witness_bytes_naive as f64
+        }
+    }
+
+    pub fn cacheable_fraction(&self) -> f64 {
+        if self.total_witness_bytes_naive == 0 {
+            0.0
+        } else {
+            (self.total_witness_bytes_naive - self.total_noncacheable_floor_bytes) as f64
+                / self.total_witness_bytes_naive as f64
         }
     }
 }

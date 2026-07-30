@@ -19,9 +19,13 @@ For each block, in order:
    capacity.
 4. **Record** — per-stratum metrics.
 
-Compression ratio = hit rate (`hits / reads`) — byte-independent. Absolute bytes
-use `--bytes-per-key` (default **200 B**, the amortized Verkle witness item size
-from Oberst 2025 + EIP-6800), recorded in output so analytics can rescale.
+Witness bytes use a **structural EIP-4762 Verkle model** (`src/witness.rs`): each key
+maps to a Verkle `(stem, suffix)` and a block's witness is accounted as a non-cacheable
+per-block IPA proof floor (576 B) + `commitments_by_path` + per-stem scaffolding +
+per-leaf values, with a stem dirtied by any miss/write re-shipping its scaffold.
+`overall_compression_ratio = bytes_saved / bytes_naive` is therefore **decoupled** from
+the hit rate. Output columns: `bytes_sent`, `bytes_saved`, `bytes_naive`, `floor_bytes`,
+`cacheable_fraction`.
 
 ## Sweep grid
 

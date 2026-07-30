@@ -1,10 +1,3 @@
-"""H4 — compression vs cache capacity, faceted by window.
-
-Shows how each policy's compression scales with the capacity bound (% of the
-window working set), across all retention windows. ARC should dominate at small
-capacities and converge with LRU/LFU at 100% (where capacity no longer binds).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,7 +31,7 @@ def make_plots(runs, out: Path) -> None:
         ax.set_xlabel("capacity (% of working set)")
         ax.set_title(f"N = {w}")
         ax.set_xticks(CAPS)
-    axes[0].set_ylabel("compression (= hit rate)")
+    axes[0].set_ylabel("compression (bytes saved / naive)")
     axes[0].legend(fontsize=8)
     fig.suptitle("Compression vs capacity, by retention window")
     fig.tight_layout()

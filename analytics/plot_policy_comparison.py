@@ -1,14 +1,3 @@
-"""H4 — headline ARC vs LFU vs LRU comparison at a canonical window.
-
-Two panels at window N=32 (the H2 operating point), stratum=all:
-  (left)  grouped bars: compression per policy at each capacity — shows
-          ARC >= LFU > LRU below 100% and convergence at 100%.
-  (right) ARC and LFU advantage over LRU, in compression points, vs capacity.
-
-ARC results use the corrected algorithm (Stage 3 fixed a collapse under external
-write-invalidation; regression-tested).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -45,7 +34,7 @@ def make_plots(runs, out: Path, window: int = CANONICAL_WINDOW) -> None:
     axbar.set_xticks(x)
     axbar.set_xticklabels([f"{c}%" for c in CAPS])
     axbar.set_xlabel("capacity (% of working set)")
-    axbar.set_ylabel("compression (= hit rate)")
+    axbar.set_ylabel("compression (bytes saved / naive)")
     axbar.set_title(f"Policy compression (N = {window})")
     axbar.legend(fontsize=8)
 

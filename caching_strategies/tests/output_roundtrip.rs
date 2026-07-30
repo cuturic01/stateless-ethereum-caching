@@ -14,20 +14,21 @@ fn sample_row(run_id: u32) -> RunSummary {
         capacity_pct: 50,
         capacity_entries: 25_000,
         stratum: "all".into(),
-        bytes_per_key: 200,
         blocks_counted: 50_400,
         total_reads: 1_000,
         total_hits: 700,
         total_misses: 300,
         overall_hit_rate: 0.7,
-        overall_compression_ratio: 0.7,
+        overall_compression_ratio: 0.55,
         total_invalidations: 120,
         peak_occupancy: 24_999,
         mean_survival: 12.5,
         survival_buckets: [1; SURVIVAL_BUCKETS],
-        bytes_witnessed: 300 * 200,
-        bytes_saved: 700 * 200,
-        bytes_naive: 1000 * 200,
+        bytes_sent: 450_000,
+        bytes_saved: 550_000,
+        bytes_naive: 1_000_000,
+        floor_bytes: 290_304,
+        cacheable_fraction: 0.71,
     }
 }
 
@@ -45,12 +46,16 @@ fn runs_parquet_roundtrips() {
         .unwrap();
     let batch = reader.next().unwrap().unwrap();
     assert_eq!(batch.num_rows(), 2);
-    // 16 base columns + 14 survival buckets + 3 byte columns = 33
-    assert_eq!(batch.num_columns(), 16 + SURVIVAL_BUCKETS + 3);
+    // 15 base columns + 14 survival buckets + 5 byte/fraction columns = 34
+    assert_eq!(batch.num_columns(), 15 + SURVIVAL_BUCKETS + 5);
 
     let schema = batch.schema();
     assert_eq!(schema.field(0).name(), "run_id");
     assert!(schema.column_with_name("overall_compression_ratio").is_some());
     assert!(schema.column_with_name("survival_b13").is_some());
     assert!(schema.column_with_name("bytes_saved").is_some());
+    assert!(schema.column_with_name("bytes_sent").is_some());
+    assert!(schema.column_with_name("floor_bytes").is_some());
+    assert!(schema.column_with_name("cacheable_fraction").is_some());
+    assert!(schema.column_with_name("bytes_per_key").is_none());
 }

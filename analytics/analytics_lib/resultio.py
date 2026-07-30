@@ -1,15 +1,3 @@
-"""Read the Rust simulation outputs in ``results/`` for Stage-4 analysis.
-
-Mirrors ``dataio.py``'s role for the scraped dataset: a single IO/decoding layer
-that every plot and table script imports. Returns numpy arrays / plain dicts
-(no pandas), matching the package's minimal-dependency style.
-
-Schema (written by ``caching_strategies/src/output.rs``):
-- ``runs.parquet``        one row per sweep run (225 rows).
-- ``series/run_<id>.parquet``    per-block time series for that run.
-- ``contracts/run_<id>.parquet`` top-50 invalidating contracts for that run.
-"""
-
 from __future__ import annotations
 
 import json

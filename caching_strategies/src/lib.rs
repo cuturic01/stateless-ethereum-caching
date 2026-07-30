@@ -11,3 +11,4 @@ pub mod policy;
 pub mod strata;
 pub mod sweep;
 pub mod window;
+pub mod witness;

@@ -4,8 +4,6 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
-pub const DEFAULT_BYTES_PER_KEY: u32 = 200;
-
 pub const WINDOWS: [u64; 5] = [8, 16, 32, 64, 128];
 
 pub const CAPACITY_PCTS: [u32; 5] = [10, 25, 50, 75, 100];

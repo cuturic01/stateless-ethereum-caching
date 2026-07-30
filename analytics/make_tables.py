@@ -1,14 +1,3 @@
-"""Generate the Stage-4 summary tables (LaTeX + Markdown) from results/.
-
-Emits, into out/results/, both a ``table_<name>.tex`` (booktabs) and a
-``table_<name>.md`` for each:
-  T1 compression_vs_window  (H2) — compression + marginal Δ, per (window, policy).
-  T2 policy_comparison      (H4) — per-capacity ARC/LFU/LRU + ARC advantage (N=32).
-  T3 survival_summary       (H3) — mean survival + churn / long-lived fractions per stratum.
-  T4 top_invalidators       (H3) — top-15 invalidating contracts, with freq rank.
-  T5 compression_by_stratum (H1) — compression per stratum at a canonical config.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -101,7 +90,7 @@ def t2_policy_comparison(runs, out: Path, window=CANON_WINDOW) -> None:
         rows.append([f"{cap}%", f"{lru:.3f}", f"{lfu:.3f}", f"{arc:.3f}",
                      f"{arc - lru:+.3f}", f"{lfu - lru:+.3f}"])
     _write(out, "policy_comparison", headers, rows,
-           f"Policy comparison at N={window}, stratum all (compression = hit rate)",
+           f"Policy comparison at N={window}, stratum all (compression = bytes_saved/bytes_naive)",
            "policy_comparison")
 
 
