@@ -2,6 +2,7 @@ use crate::metrics::RunMetrics;
 use crate::model::BlockRecord;
 use crate::policy::ReplacementPolicy;
 use crate::window::RetentionWindow;
+use crate::witness::{seal, BlockWitnessAccum};
 
 pub struct MetricSink<'a> {
     pub metrics: &'a mut RunMetrics,
@@ -40,8 +41,11 @@ impl WitnessCache {
             }
         }
 
+        let mut wacc = BlockWitnessAccum::default();
+
         let mut invalidations: u32 = 0;
         for w in &rec.writes {
+            wacc.record_leaf(w, false, true);
             if self.policy.remove(w) {
                 let last_seen = self.window.remove(w).unwrap_or(now);
                 let age = now.saturating_sub(last_seen);
@@ -59,6 +63,7 @@ impl WitnessCache {
         let mut misses: u32 = 0;
         for r in &rec.reads {
             let out = self.policy.access(*r);
+            wacc.record_leaf(r, out.hit, false);
             if let Some(ev) = out.evicted {
                 let last_seen = self.window.remove(&ev).unwrap_or(now);
                 let age = now.saturating_sub(last_seen);
@@ -76,11 +81,12 @@ impl WitnessCache {
             }
         }
 
+       let wb = seal(&wacc);
         let reads = rec.reads.len() as u32;
         let occ = self.occupancy() as u64;
         for s in sinks.iter_mut() {
             if s.active {
-                s.metrics.record_block(now, reads, hits, misses, invalidations, occ);
+                s.metrics.record_block(now, reads, hits, misses, invalidations, occ, wb);
             }
         }
     }

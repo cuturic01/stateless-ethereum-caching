@@ -62,9 +62,10 @@ Outputs to `out/results/`:
 | `invalidation_by_contract.png` | H3 | top invalidating contracts (Zipf-like concentration) |
 | `table_*.tex` / `table_*.md` | all | thesis-ready summary tables (booktabs LaTeX + Markdown mirror) |
 
-Compression here is the cache hit rate (= bytes saved / bytes naive at the
-200 B/item witness model). Every script accepts `--results-dir`, `--out`
-(and `plot_invalidation_by_contract.py`/`make_tables.py` also `--dataset-dir`).
+Compression here is `bytes_saved / bytes_naive` under the structural EIP-4762 Verkle
+witness model (`caching_strategies/src/witness.rs`) — decoupled from the hit rate by
+the non-cacheable per-block IPA proof floor. Every script accepts `--results-dir`,
+`--out` (and `plot_invalidation_by_contract.py`/`make_tables.py` also `--dataset-dir`).
 
 ## Tests
 

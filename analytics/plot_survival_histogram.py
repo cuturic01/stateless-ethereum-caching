@@ -1,14 +1,3 @@
-"""H3 — cache-entry survival histogram, per stratum.
-
-Age = blocks an entry survives from insertion to eviction (by write-invalidation
-or replacement). H3 predicts a bimodal shape: many long-lived entries (stable
-contracts) plus a churn cluster at age 0–1 (DEX reserves). defi-heavy blocks
-should show a larger churn spike than transfer-only.
-
-Reads the survival_b0..b13 histogram columns from runs.parquet at a canonical
-config (policy=lru, window=32, capacity=100%), one panel per stratum.
-"""
-
 from __future__ import annotations
 
 import argparse

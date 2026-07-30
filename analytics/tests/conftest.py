@@ -1,9 +1,3 @@
-"""Synthetic fixtures mirroring the on-disk formats Stage 4 consumes.
-
-``synthetic_data`` mimics the block_scraper shards (Stage 2 input);
-``synthetic_results`` mimics the Rust sweep output in ``results/`` (Stage 4 input).
-"""
-
 import hashlib
 import json
 
@@ -94,13 +88,15 @@ def synthetic_results(tmp_path):
 
     rows: dict[str, list] = {c: [] for c in (
         "run_id", "policy", "window", "capacity_pct", "capacity_entries", "stratum",
-        "bytes_per_key", "blocks_counted", "total_reads", "total_hits", "total_misses",
+        "blocks_counted", "total_reads", "total_hits", "total_misses",
         "overall_hit_rate", "overall_compression_ratio", "total_invalidations",
         "peak_occupancy", "mean_survival",
         *(f"survival_b{i}" for i in range(SURVIVAL_BUCKETS)),
-        "bytes_witnessed", "bytes_saved", "bytes_naive",
+        "bytes_sent", "bytes_saved", "bytes_naive", "floor_bytes", "cacheable_fraction",
     )}
     pol_bonus = {"lru": 0.0, "lfu": 0.03, "arc": 0.05}
+    blocks = 20
+    floor_per_block = 576  # witness::IPA_FLOOR_BYTES
     for pol in POLICIES:
         for w in WINDOWS:
             for cap in CAPS:
@@ -108,29 +104,39 @@ def synthetic_results(tmp_path):
                     rid = run_id_for(pol, w, cap, stratum)
                     # diminishing-by-capacity, recency<freq<adaptive below 100%.
                     bonus = 0.0 if cap == 100 else pol_bonus[pol] * (100 - cap) / 100
-                    comp = min(0.10 + 0.0015 * w + bonus, 0.40)
-                    reads, hits = 10_000, int(10_000 * comp)
+                    hit_rate = min(0.10 + 0.0015 * w + bonus, 0.40)
+                    reads, hits = 10_000, int(10_000 * hit_rate)
+                    # Structural witness bytes: a fresh per-block IPA floor that no
+                    # cache can save, so the structural compression ratio is below
+                    # the hit rate (and bounded by the cacheable fraction).
+                    naive = reads * 250
+                    floor = blocks * floor_per_block
+                    cacheable_fraction = (naive - floor) / naive
+                    comp = hit_rate * 0.75  # decoupled from hit rate, < cacheable
+                    saved = int(naive * comp)
+                    sent = naive - saved
                     rows["run_id"].append(rid)
                     rows["policy"].append(pol)
                     rows["window"].append(w)
                     rows["capacity_pct"].append(cap)
                     rows["capacity_entries"].append(w * 100 * cap)
                     rows["stratum"].append(stratum)
-                    rows["bytes_per_key"].append(200)
-                    rows["blocks_counted"].append(20)
+                    rows["blocks_counted"].append(blocks)
                     rows["total_reads"].append(reads)
                     rows["total_hits"].append(hits)
                     rows["total_misses"].append(reads - hits)
-                    rows["overall_hit_rate"].append(comp)
+                    rows["overall_hit_rate"].append(hit_rate)
                     rows["overall_compression_ratio"].append(comp)
                     rows["total_invalidations"].append(1000 + rid)
                     rows["peak_occupancy"].append(w * 100)
                     rows["mean_survival"].append(8.0 + 0.1 * w)
                     for i in range(SURVIVAL_BUCKETS):
                         rows[f"survival_b{i}"].append(100 - i if i < 14 else 0)
-                    rows["bytes_witnessed"].append((reads - hits) * 200)
-                    rows["bytes_saved"].append(hits * 200)
-                    rows["bytes_naive"].append(reads * 200)
+                    rows["bytes_sent"].append(sent)
+                    rows["bytes_saved"].append(saved)
+                    rows["bytes_naive"].append(naive)
+                    rows["floor_bytes"].append(floor)
+                    rows["cacheable_fraction"].append(cacheable_fraction)
     pq.write_table(pa.table(rows), results / "runs.parquet")
 
     # A couple of series + contracts files (canonical run + run 0).
@@ -140,7 +146,8 @@ def synthetic_results(tmp_path):
             "block_number": [1000, 1001, 1002],
             "reads": [10, 12, 8], "hits": [3, 5, 2], "misses": [7, 7, 6],
             "block_hit_rate": [0.3, 0.41, 0.25],
-            "bytes_witnessed": [1400, 1400, 1200], "bytes_saved": [600, 1000, 400],
+            "bytes_sent": [2576, 2376, 2776], "bytes_saved": [600, 1000, 400],
+            "bytes_naive": [3176, 3376, 3176], "floor_bytes": [576, 576, 576],
             "invalidations": [2, 1, 3], "occupancy": [8, 11, 10],
         }), results / "series" / f"run_{rid}.parquet")
         pq.write_table(pa.table({

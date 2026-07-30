@@ -1,13 +1,3 @@
-"""H1 / H2 — compression vs retention window N.
-
-H1: cross-block redundancy is substantial (compression >> 0.10).
-H2: compression rises fast toward N~32 then gains diminish. We also plot the
-marginal gain Δcompression/ΔN to make the inflection visible numerically.
-
-Witness size is 200 B/item (Oberst 2025 + EIP-6800); compression here is the hit
-rate = bytes_saved / bytes_naive.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -35,8 +25,6 @@ def _comp_by_window(runs, **filters) -> np.ndarray:
 
 
 def make_plots(runs, out: Path) -> None:
-    # Panel A: one line per policy at cap=100%, stratum=all (H1 best case).
-    # Panel B: one line per capacity at policy=lru, stratum=all (capacity sensitivity).
     fig, (axp, axc) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
     for pol in POLICIES:
@@ -45,7 +33,7 @@ def make_plots(runs, out: Path) -> None:
     axp.axhline(0.10, ls="--", color="grey", lw=1, label="H1 threshold (0.10)")
     axp.axvline(32, ls=":", color="red", lw=1, label="H2 inflection (N=32)")
     axp.set_xlabel("retention window N (blocks)")
-    axp.set_ylabel("compression (= hit rate)")
+    axp.set_ylabel("compression (bytes saved / naive)")
     axp.set_title("By policy (capacity = 100%)")
     axp.set_xscale("log", base=2)
     axp.set_xticks(WINDOWS)
