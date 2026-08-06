@@ -1,17 +1,16 @@
 use crate::hash::FastMap;
-use crate::model::Key;
 use crate::ordered::OrderedMap;
 
-use super::{AccessOutcome, ReplacementPolicy};
+use super::{AccessOutcome, CacheKey, ReplacementPolicy};
 
-pub struct Lfu {
+pub struct Lfu<K> {
     capacity: usize,
-    freq: FastMap<Key, u64>,
-    buckets: FastMap<u64, OrderedMap<()>>,
+    freq: FastMap<K, u64>,
+    buckets: FastMap<u64, OrderedMap<K, ()>>,
     min_freq: u64,
 }
 
-impl Lfu {
+impl<K: CacheKey> Lfu<K> {
     pub fn new(capacity: usize) -> Self {
         Lfu {
             capacity,
@@ -21,7 +20,7 @@ impl Lfu {
         }
     }
 
-    fn detach(&mut self, key: &Key, f: u64) {
+    fn detach(&mut self, key: &K, f: u64) {
         if let Some(b) = self.buckets.get_mut(&f) {
             b.remove(key);
             if b.is_empty() {
@@ -40,8 +39,8 @@ impl Lfu {
     }
 }
 
-impl ReplacementPolicy for Lfu {
-    fn access(&mut self, key: Key) -> AccessOutcome {
+impl<K: CacheKey> ReplacementPolicy<K> for Lfu<K> {
+    fn access(&mut self, key: K) -> AccessOutcome<K> {
         if let Some(&f) = self.freq.get(&key) {
             self.detach(&key, f);
             let nf = f + 1;
@@ -72,7 +71,7 @@ impl ReplacementPolicy for Lfu {
         AccessOutcome { hit: false, evicted }
     }
 
-    fn remove(&mut self, key: &Key) -> bool {
+    fn remove(&mut self, key: &K) -> bool {
         if let Some(f) = self.freq.remove(key) {
             self.detach(key, f);
             true
@@ -90,7 +89,7 @@ impl ReplacementPolicy for Lfu {
     fn name(&self) -> &'static str {
         "lfu"
     }
-    fn contains(&self, key: &Key) -> bool {
+    fn contains(&self, key: &K) -> bool {
         self.freq.contains_key(key)
     }
 }

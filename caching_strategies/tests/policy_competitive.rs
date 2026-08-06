@@ -3,7 +3,7 @@
 //! policy that fails to retain frequently/recently used entries.
 
 use caching_strategies::model::{Address, Key, ADDR_LEN};
-use caching_strategies::policy::{PolicyKind, ReplacementPolicy};
+use caching_strategies::policy::PolicyKind;
 
 fn key(n: u32) -> Key {
     let mut b = [0u8; ADDR_LEN];
@@ -57,7 +57,7 @@ use caching_strategies::metrics::RunMetrics;
 use caching_strategies::model::BlockRecord;
 
 fn windowed_hit_rate(kind: PolicyKind, capacity: usize, window: u64) -> f64 {
-    let mut c = WitnessCache::new(kind.build(capacity), window);
+    let mut c = WitnessCache::new(kind.build(capacity), kind.build(capacity), window);
     let mut m = RunMetrics::default();
     // 300 blocks; each block reads a sliding window of 31 keys, so consecutive
     // blocks share 30 keys — strong reuse well within the window.
@@ -83,7 +83,7 @@ fn windowed_cache_retains_reused_keys() {
 /// rather than getting pinned near-empty by stale ghost lists. Runs at a large
 /// capacity (where the original bug manifested) with reuse + churn.
 fn windowed_hit_rate_with_writes(kind: PolicyKind, capacity: usize, window: u64) -> (f64, u64) {
-    let mut c = WitnessCache::new(kind.build(capacity), window);
+    let mut c = WitnessCache::new(kind.build(capacity), kind.build(capacity), window);
     let mut m = RunMetrics::default();
     let pool = 8000u32; // reused key pool, fits well within capacity
     let mut cold = 5_000_000u32;

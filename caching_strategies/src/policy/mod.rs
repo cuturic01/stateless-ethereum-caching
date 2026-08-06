@@ -1,19 +1,22 @@
-use crate::model::Key;
+use std::hash::Hash;
 
 pub mod arc;
 pub mod lfu;
 pub mod lru;
 
+pub trait CacheKey: Copy + Eq + Hash + Send + Sync + 'static {}
+impl<T: Copy + Eq + Hash + Send + Sync + 'static> CacheKey for T {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AccessOutcome {
+pub struct AccessOutcome<K> {
     pub hit: bool,
-    pub evicted: Option<Key>,
+    pub evicted: Option<K>,
 }
 
-pub trait ReplacementPolicy: Send + Sync {
-    fn access(&mut self, key: Key) -> AccessOutcome;
+pub trait ReplacementPolicy<K>: Send + Sync {
+    fn access(&mut self, key: K) -> AccessOutcome<K>;
 
-   fn remove(&mut self, key: &Key) -> bool;
+    fn remove(&mut self, key: &K) -> bool;
 
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -22,7 +25,7 @@ pub trait ReplacementPolicy: Send + Sync {
     fn capacity(&self) -> usize;
     fn name(&self) -> &'static str;
 
-    fn contains(&self, key: &Key) -> bool;
+    fn contains(&self, key: &K) -> bool;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +36,7 @@ pub enum PolicyKind {
 }
 
 impl PolicyKind {
-    pub fn build(self, capacity: usize) -> Box<dyn ReplacementPolicy> {
+    pub fn build<K: CacheKey>(self, capacity: usize) -> Box<dyn ReplacementPolicy<K>> {
         let capacity = capacity.max(1);
         match self {
             PolicyKind::Lru => Box::new(lru::Lru::new(capacity)),

@@ -24,15 +24,24 @@ def _comp_by_capacity(runs, policy: str, window: int) -> np.ndarray:
 
 
 def make_plots(runs, out: Path) -> None:
-    fig, axes = plt.subplots(1, len(WINDOWS), figsize=(4 * len(WINDOWS), 4.5), sharey=True)
-    for ax, w in zip(axes, WINDOWS, strict=True):
+    # 2x3 rather than 1x5: at the thesis text width a 20-inch-wide strip scales
+    # the tick labels down to roughly 3 pt. Six cells for five windows, so the
+    # unused one is turned off.
+    ncols = 3
+    nrows = -(-len(WINDOWS) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3.6 * nrows), sharey=True)
+    flat = axes.ravel()
+    for ax, w in zip(flat, WINDOWS, strict=False):
         for pol in POLICIES:
             ax.plot(CAPS, _comp_by_capacity(runs, pol, w), "o-", label=pol.upper())
         ax.set_xlabel("capacity (% of working set)")
         ax.set_title(f"N = {w}")
         ax.set_xticks(CAPS)
-    axes[0].set_ylabel("compression (bytes saved / naive)")
-    axes[0].legend(fontsize=8)
+    for ax in flat[len(WINDOWS):]:
+        ax.set_visible(False)
+    for r in range(nrows):
+        flat[r * ncols].set_ylabel("compression (bytes saved / naive)")
+    flat[0].legend(fontsize=8)
     fig.suptitle("Compression vs capacity, by retention window")
     fig.tight_layout()
     fig.savefig(out / "compression_vs_capacity.png", dpi=120)

@@ -93,7 +93,12 @@ def synthetic_results(tmp_path):
         "peak_occupancy", "mean_survival",
         *(f"survival_b{i}" for i in range(SURVIVAL_BUCKETS)),
         "bytes_sent", "bytes_saved", "bytes_naive", "floor_bytes", "cacheable_fraction",
+        "peak_cache_bytes", "mean_cache_bytes", "peak_leaf_bytes", "peak_stem_bytes",
+        "bytes_sent_stem", "bytes_sent_stem_opt", "compression_stem",
+        "stem_capacity_entries", "stem_peak_occupancy", "stem_mean_survival",
+        "total_stem_invalidations",
     )}
+    leaf_entry_bytes, stem_entry_bytes = 33, 128  # witness.rs
     pol_bonus = {"lru": 0.0, "lfu": 0.03, "arc": 0.05}
     blocks = 20
     floor_per_block = 576  # witness::IPA_FLOOR_BYTES
@@ -137,6 +142,29 @@ def synthetic_results(tmp_path):
                     rows["bytes_naive"].append(naive)
                     rows["floor_bytes"].append(floor)
                     rows["cacheable_fraction"].append(cacheable_fraction)
+
+                    # Footprint: leaf and stem caches sized off their own
+                    # working sets, stems running ~0.76 of the leaf count.
+                    leaf_entries = w * 100
+                    stem_entries = int(leaf_entries * 0.76)
+                    peak_leaf = leaf_entries * leaf_entry_bytes
+                    peak_stem = stem_entries * stem_entry_bytes
+                    rows["peak_cache_bytes"].append(peak_leaf + peak_stem)
+                    rows["mean_cache_bytes"].append(0.8 * (peak_leaf + peak_stem))
+                    rows["peak_leaf_bytes"].append(peak_leaf)
+                    rows["peak_stem_bytes"].append(peak_stem)
+
+                    # Explicit stem cache: a small gain over the leaf-only
+                    # model, as extention-plan §12 predicts.
+                    comp_stem = min(comp * 1.06, cacheable_fraction)
+                    sent_stem = naive - int(naive * comp_stem)
+                    rows["bytes_sent_stem"].append(sent_stem)
+                    rows["bytes_sent_stem_opt"].append(int(sent * 0.99))
+                    rows["compression_stem"].append(comp_stem)
+                    rows["stem_capacity_entries"].append(stem_entries)
+                    rows["stem_peak_occupancy"].append(stem_entries - 1)
+                    rows["stem_mean_survival"].append(6.0 + 0.08 * w)
+                    rows["total_stem_invalidations"].append(800 + rid)
     pq.write_table(pa.table(rows), results / "runs.parquet")
 
     # A couple of series + contracts files (canonical run + run 0).
@@ -149,6 +177,7 @@ def synthetic_results(tmp_path):
             "bytes_sent": [2576, 2376, 2776], "bytes_saved": [600, 1000, 400],
             "bytes_naive": [3176, 3376, 3176], "floor_bytes": [576, 576, 576],
             "invalidations": [2, 1, 3], "occupancy": [8, 11, 10],
+            "cache_bytes": [1288, 1651, 1522], "bytes_sent_stem": [2448, 2248, 2648],
         }), results / "series" / f"run_{rid}.parquet")
         pq.write_table(pa.table({
             "address": ["0xdac17f958d2ee523a2206206994597c13d831ec7",

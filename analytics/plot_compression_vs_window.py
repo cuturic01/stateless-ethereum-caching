@@ -31,7 +31,9 @@ def make_plots(runs, out: Path) -> None:
         axp.plot(WINDOWS, _comp_by_window(runs, policy=pol, capacity_pct=100, stratum="all"),
                  "o-", label=pol.upper())
     axp.axhline(0.10, ls="--", color="grey", lw=1, label="H1 threshold (0.10)")
-    axp.axvline(32, ls=":", color="red", lw=1, label="H2 inflection (N=32)")
+    # H2 predicted a plateau here; the measured curve passes through it smoothly.
+    # Labelled as the prediction, not as an observed feature of the data.
+    axp.axvline(32, ls=":", color="red", lw=1, label="H2 predicted plateau (N = 32)")
     axp.set_xlabel("retention window N (blocks)")
     axp.set_ylabel("compression (bytes saved / naive)")
     axp.set_title("By policy (capacity = 100%)")
@@ -43,6 +45,7 @@ def make_plots(runs, out: Path) -> None:
     for cap in CAPS:
         axc.plot(WINDOWS, _comp_by_window(runs, policy="lru", capacity_pct=cap, stratum="all"),
                  "o-", label=f"{cap}%")
+    # Same marker as the left panel; explained by that panel's legend.
     axc.axvline(32, ls=":", color="red", lw=1)
     axc.set_xlabel("retention window N (blocks)")
     axc.set_title("By capacity (policy = LRU)")
@@ -56,19 +59,23 @@ def make_plots(runs, out: Path) -> None:
     fig.savefig(out / "compression_vs_window.png", dpi=120)
     plt.close(fig)
 
-    # Marginal gain Δcompression/ΔN per policy at cap=100% (H2 inflection numerically).
+    # Marginal gain per doubling of N (H2, quantified). The sweep steps *are*
+    # doublings, so the step is the natural unit and matches the +0.048/+0.036/
+    # +0.028/+0.021 figures in table_compression_vs_window. Plotted against a
+    # categorical step axis: dividing by ΔN instead puts every point between
+    # two ticks and makes the figure unreadable against the table.
+    steps = [f"{WINDOWS[i]}→{WINDOWS[i + 1]}" for i in range(len(WINDOWS) - 1)]
+    x = np.arange(len(steps))
     fig, ax = plt.subplots(figsize=(8, 4))
     for pol in POLICIES:
         comp = _comp_by_window(runs, policy=pol, capacity_pct=100, stratum="all")
-        dn = np.diff(WINDOWS)
-        marginal = np.diff(comp) / dn
-        mids = [(WINDOWS[i] + WINDOWS[i + 1]) / 2 for i in range(len(WINDOWS) - 1)]
-        ax.plot(mids, marginal, "o-", label=pol.upper())
+        ax.plot(x, np.diff(comp), "o-", label=pol.upper())
     ax.axhline(0, color="grey", lw=0.8)
-    ax.set_xlabel("window N (midpoint of step)")
-    ax.set_ylabel("marginal gain Δcompression / ΔN")
-    ax.set_title("Diminishing returns of a larger window")
-    ax.set_xscale("log", base=2)
+    ax.set_xticks(x)
+    ax.set_xticklabels(steps)
+    ax.set_xlabel("retention window step (blocks)")
+    ax.set_ylabel("Δ compression per doubling of N")
+    ax.set_title("Diminishing returns of a larger window (capacity = 100%)")
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out / "marginal_gain_vs_window.png", dpi=120)

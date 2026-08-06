@@ -20,6 +20,37 @@ SURVIVAL_LABELS = [
     "8–15", "16–31", "32–63", "64–127", "128–255", "256+",
 ]
 
+# Names for the hot-set contracts the thesis refers to by name (report.md:109,
+# outline.md:199). Only these are named; anything else is shown as a bare
+# address. Keys are lowercase and 0x-prefixed, matching contracts/*.parquet.
+KNOWN_CONTRACTS = {
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "WETH",
+    "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": "WBTC",
+    "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": "Aave v3",
+    "0x000000000004444c5dc75cb358380d2e3de08a90": "Uniswap v4",
+}
+
+
+def short_addr(addr: str) -> str:
+    """Elide an address to ``0xxxxxxxxx…yyyyyy``, keeping head *and* tail.
+
+    Head-only truncation is not injective over this dataset: five of the top-30
+    contracts begin with eight zero nibbles and would all render as
+    ``0x00000000``. Keeping the last six nibbles separates them.
+    """
+    a = addr.lower()
+    return f"{a[:10]}…{a[-6:]}" if len(a) > 18 else a
+
+
+def contract_label(addr: str, rank: int | None = None) -> str:
+    """Axis label for a contract: name if known, elided address, optional rank."""
+    parts = [KNOWN_CONTRACTS.get(addr.lower(), ""), short_addr(addr)]
+    if rank:
+        parts.append(f"(#{rank})")
+    return " ".join(p for p in parts if p)
+
 
 def load_runs(results_dir: Path) -> dict[str, np.ndarray]:
     """Load ``runs.parquet`` as a dict of column-name -> numpy array."""

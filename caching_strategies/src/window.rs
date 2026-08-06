@@ -1,12 +1,13 @@
-use crate::model::Key;
+use std::hash::Hash;
+
 use crate::ordered::OrderedMap;
 
-pub struct RetentionWindow {
+pub struct RetentionWindow<K> {
     n: u64,
-    order: OrderedMap<u64>,
+    order: OrderedMap<K, u64>,
 }
 
-impl RetentionWindow {
+impl<K: Copy + Eq + Hash> RetentionWindow<K> {
     pub fn new(n: u64) -> Self {
         RetentionWindow { n, order: OrderedMap::new() }
     }
@@ -19,17 +20,17 @@ impl RetentionWindow {
         self.order.is_empty()
     }
 
-    pub fn touch(&mut self, key: Key, now: u64) {
+    pub fn touch(&mut self, key: K, now: u64) {
         if !self.order.touch_back(&key, now) {
             self.order.push_back(key, now);
         }
     }
 
-    pub fn remove(&mut self, key: &Key) -> Option<u64> {
+    pub fn remove(&mut self, key: &K) -> Option<u64> {
         self.order.remove(key)
     }
 
-    pub fn drain_expired(&mut self, now: u64) -> Vec<(Key, u64)> {
+    pub fn drain_expired(&mut self, now: u64) -> Vec<(K, u64)> {
         let mut expired = Vec::new();
         while let Some((_, &last_seen)) = self.order.front() {
             if last_seen + self.n <= now {
@@ -46,7 +47,7 @@ impl RetentionWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Address, ADDR_LEN};
+    use crate::model::{Address, Key, ADDR_LEN};
 
     fn k(n: u8) -> Key {
         Key::account(Address([n; ADDR_LEN]))
