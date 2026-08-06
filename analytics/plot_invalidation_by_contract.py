@@ -17,7 +17,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from analytics_lib.resultio import load_contracts, load_top_contracts, run_id_for  # noqa: E402
+from analytics_lib.resultio import (  # noqa: E402
+    contract_label,
+    load_contracts,
+    load_top_contracts,
+    run_id_for,
+)
 
 console = Console()
 
@@ -27,17 +32,17 @@ TOP_N = 20
 def make_plots(results_dir: Path, dataset_dir: Path, out: Path,
                policy="lru", window=32, cap=100, stratum="all") -> None:
     run_id = run_id_for(policy, window, cap, stratum)
-    contracts = load_contracts(results_dir, run_id)[:TOP_N]
-    if not contracts:
+    all_contracts = load_contracts(results_dir, run_id)
+    if not all_contracts:
         console.print("[yellow]No invalidation data for the canonical run; skipping plot.")
         return
+    # Denominator is the full top-50 the simulator wrote (sweep.rs TOP_CONTRACTS),
+    # not the top-20 drawn here — the shares must match table_top_invalidators.
+    total = sum(n for _, n in all_contracts) or 1
+    contracts = all_contracts[:TOP_N]
     ranks = load_top_contracts(dataset_dir)
 
-    labels = []
-    for addr, _ in contracts:
-        short = addr[:10]  # 0x + first 8 hex chars
-        rank = ranks.get(addr.lower())
-        labels.append(f"{short} (#{rank})" if rank else short)
+    labels = [contract_label(addr, ranks.get(addr.lower())) for addr, _ in contracts]
     vals = [n for _, n in contracts]
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -45,11 +50,16 @@ def make_plots(results_dir: Path, dataset_dir: Path, out: Path,
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels(labels, fontsize=7)
     ax.invert_yaxis()
-    ax.set_xlabel("write-invalidations")
+    ax.set_xlabel("write-invalidations (millions)")
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v / 1e6:g}"))
+    # Share of the top-50 total, so the bars can be read as concentration.
+    for i, v in enumerate(vals):
+        ax.text(v, i, f"  {v / total:.1%}", va="center", fontsize=6)
+    ax.margins(x=0.12)
     ax.set_title(
         f"Top {TOP_N} invalidating contracts "
         f"(policy={policy.upper()}, N={window}, cap={cap}%, {stratum})\n"
-        "#rank = access-frequency rank from dataset_stats.json"
+        "#rank = access-frequency rank; % = share of top-50 invalidations"
     )
     fig.tight_layout()
     fig.savefig(out / "invalidation_by_contract.png", dpi=120)

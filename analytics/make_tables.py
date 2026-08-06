@@ -8,6 +8,7 @@ from rich.console import Console
 
 from analytics_lib.resultio import (
     CAPS,
+    KNOWN_CONTRACTS,
     POLICIES,
     STRATA,
     SURVIVAL_BUCKETS,
@@ -65,19 +66,79 @@ def _comp(runs, **f) -> float:
     return float(runs["overall_compression_ratio"][m][0]) if m.any() else float("nan")
 
 
+def _col(runs, col: str, **f) -> float:
+    m = select(runs, **f)
+    return float(runs[col][m][0]) if m.any() else float("nan")
+
+
 def t1_compression_vs_window(runs, out: Path) -> None:
-    headers = ["policy", "window N", "compression", "Δ vs prev N"]
+    headers = ["policy", "window N", "compression", "Δ vs prev N", "stem cache", "gain"]
     rows = []
     for pol in POLICIES:
         prev = None
         for w in WINDOWS:
-            c = _comp(runs, policy=pol, window=w, capacity_pct=100, stratum="all")
+            f = dict(policy=pol, window=w, capacity_pct=100, stratum="all")
+            c = _comp(runs, **f)
+            cs = _col(runs, "compression_stem", **f)
             d = "—" if prev is None else f"{c - prev:+.3f}"
-            rows.append([pol.upper(), str(w), f"{c:.3f}", d])
+            rows.append([pol.upper(), str(w), f"{c:.3f}", d, f"{cs:.3f}", f"{cs - c:+.3f}"])
             prev = c
     _write(out, "compression_vs_window", headers, rows,
-           "Compression vs retention window (capacity 100%, stratum all)",
+           "Compression vs retention window (capacity 100%, stratum all). "
+           "'stem cache' is the explicit extension-node cache; 'gain' its "
+           "improvement over the leaf-only model.",
            "compression_vs_window")
+
+
+def t6_cache_footprint(runs, out: Path, policy=CANON_POLICY) -> None:
+    """Bytes of witness material held — the cost side of the compression figures."""
+    mb = 1024 * 1024
+    headers = ["window N", "peak (MB)", "mean (MB)", "leaves (MB)", "stems (MB)",
+               "leaf entries", "stem entries"]
+    rows = []
+    for w in WINDOWS:
+        f = dict(policy=policy, window=w, capacity_pct=100, stratum="all")
+        if not select(runs, **f).any():
+            continue
+        rows.append([
+            str(w),
+            f"{_col(runs, 'peak_cache_bytes', **f) / mb:.2f}",
+            f"{_col(runs, 'mean_cache_bytes', **f) / mb:.2f}",
+            f"{_col(runs, 'peak_leaf_bytes', **f) / mb:.2f}",
+            f"{_col(runs, 'peak_stem_bytes', **f) / mb:.2f}",
+            f"{int(_col(runs, 'capacity_entries', **f)):,}",
+            f"{int(_col(runs, 'stem_capacity_entries', **f)):,}",
+        ])
+    _write(out, "cache_footprint", headers, rows,
+           f"Cache footprint at capacity 100% (policy={policy.upper()}, stratum all). "
+           "Witness material held at 33 B/leaf and 128 B/stem; excludes the key "
+           "index a real client would also pay for.",
+           "cache_footprint")
+
+
+def t7_stem_summary(runs, out: Path, policy=CANON_POLICY, cap=CANON_CAP) -> None:
+    headers = ["window N", "compression", "stem cache", "leaf-only bound",
+               "stem survival", "stem invalidations"]
+    rows = []
+    for w in WINDOWS:
+        f = dict(policy=policy, window=w, capacity_pct=cap, stratum="all")
+        if not select(runs, **f).any():
+            continue
+        naive = _col(runs, "bytes_naive", **f)
+        opt = _col(runs, "bytes_sent_stem_opt", **f)
+        rows.append([
+            str(w),
+            f"{_comp(runs, **f):.3f}",
+            f"{_col(runs, 'compression_stem', **f):.3f}",
+            f"{(naive - opt) / naive:.3f}" if naive else "—",
+            f"{_col(runs, 'stem_mean_survival', **f):.1f}",
+            f"{int(_col(runs, 'total_stem_invalidations', **f)):,}",
+        ])
+    _write(out, "stem_summary", headers, rows,
+           f"Extension-node cache (policy={policy.upper()}, cap={cap}%, stratum all). "
+           "'leaf-only bound' relaxes the published rule to require one resident "
+           "leaf rather than all of them.",
+           "stem_summary")
 
 
 def t2_policy_comparison(runs, out: Path, window=CANON_WINDOW) -> None:
@@ -123,11 +184,12 @@ def t4_top_invalidators(results_dir: Path, dataset_dir: Path, out: Path,
         return
     ranks = load_top_contracts(dataset_dir)
     total = sum(n for _, n in contracts) or 1
-    headers = ["#", "address", "freq rank", "invalidations", "share of top-50"]
+    headers = ["#", "contract", "address", "freq rank", "invalidations", "share of top-50"]
     rows = []
     for i, (addr, n) in enumerate(contracts[:15], start=1):
         r = ranks.get(addr.lower())
-        rows.append([str(i), addr, str(r) if r else "—", f"{n:,}", f"{n / total:.1%}"])
+        name = KNOWN_CONTRACTS.get(addr.lower(), "—")
+        rows.append([str(i), name, addr, str(r) if r else "—", f"{n:,}", f"{n / total:.1%}"])
     _write(out, "top_invalidators", headers, rows,
            f"Top invalidating contracts (policy={policy.upper()}, N={window}, cap={cap}%, all)",
            "top_invalidators")
@@ -176,8 +238,10 @@ def main(argv: list[str] | None = None) -> int:
     t3_survival_summary(runs, out)
     t4_top_invalidators(results_dir, Path(args.dataset_dir), out)
     t5_compression_by_stratum(runs, out)
+    t6_cache_footprint(runs, out)
+    t7_stem_summary(runs, out)
 
-    console.print(f"[green]Wrote table_*.tex and table_*.md (5 tables) to {out}")
+    console.print(f"[green]Wrote table_*.tex and table_*.md (7 tables) to {out}")
     return 0
 
 

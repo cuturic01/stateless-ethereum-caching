@@ -28,7 +28,7 @@ Outputs to `out/dataset/`:
 
 | file | purpose |
 |---|---|
-| `dataset_stats.json` | machine-readable summary; **feeds the Rust capacity sweep** (working-set sizes) |
+| `dataset_stats.json` | machine-readable summary; **feeds the Rust capacity sweep** (`window_working_set` sizes the leaf cache, `window_working_set_stems` the extension-node cache) |
 | `strata.json` | per-block stratum assignment + defi contract set; **Rust simulation input** |
 | `summary.md` | human-readable digest |
 | `*.png` | reads/writes histogram, working-set growth, working-set vs window, top contracts |
@@ -55,7 +55,7 @@ Outputs to `out/results/`:
 
 | file | hypothesis | purpose |
 |---|---|---|
-| `compression_vs_window.png`, `marginal_gain_vs_window.png` | H1, H2 | compression rises with window N; marginal gain shows the inflection |
+| `compression_vs_window.png`, `marginal_gain_vs_window.png` | H1, H2 | compression rises with window N; marginal gain per doubling of N shows the returns diminishing without reaching a plateau |
 | `compression_vs_capacity.png` | H4 | compression vs capacity, faceted by window |
 | `policy_comparison.png` | H4 | ARC vs LFU vs LRU bars + advantage over LRU (N=32) |
 | `survival_histogram.png` | H3 | entry-survival age distribution per stratum |
@@ -66,6 +66,17 @@ Compression here is `bytes_saved / bytes_naive` under the structural EIP-4762 Ve
 witness model (`caching_strategies/src/witness.rs`) — decoupled from the hit rate by
 the non-cacheable per-block IPA proof floor. Every script accepts `--results-dir`,
 `--out` (and `plot_invalidation_by_contract.py`/`make_tables.py` also `--dataset-dir`).
+
+`table_cache_footprint` reports how many megabytes the cache actually holds, and
+`table_stem_summary` the explicit extension-node cache against the leaf-only
+bound; `table_compression_vs_window` carries `compression_stem` beside the
+published figure. Both new tables are in megabytes and entries rather than raw
+byte counts.
+
+`analytics_lib/dataio.py` also mirrors the EIP-6800 stem derivation from
+`witness.rs`, so `characterize.py` sizes the stem cache on exactly the stems the
+simulator will build. `../fixtures/stem_derivation.json` is the shared fixture
+that keeps the two implementations honest.
 
 ## Tests
 

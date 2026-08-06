@@ -1,21 +1,20 @@
-use crate::model::Key;
 use crate::ordered::OrderedMap;
 
-use super::{AccessOutcome, ReplacementPolicy};
+use super::{AccessOutcome, CacheKey, ReplacementPolicy};
 
-pub struct Lru {
-    order: OrderedMap<()>,
+pub struct Lru<K> {
+    order: OrderedMap<K, ()>,
     capacity: usize,
 }
 
-impl Lru {
+impl<K: CacheKey> Lru<K> {
     pub fn new(capacity: usize) -> Self {
         Lru { order: OrderedMap::new(), capacity }
     }
 }
 
-impl ReplacementPolicy for Lru {
-    fn access(&mut self, key: Key) -> AccessOutcome {
+impl<K: CacheKey> ReplacementPolicy<K> for Lru<K> {
+    fn access(&mut self, key: K) -> AccessOutcome<K> {
         if self.order.touch_back(&key, ()) {
             return AccessOutcome { hit: true, evicted: None };
         }
@@ -28,7 +27,7 @@ impl ReplacementPolicy for Lru {
         AccessOutcome { hit: false, evicted }
     }
 
-    fn remove(&mut self, key: &Key) -> bool {
+    fn remove(&mut self, key: &K) -> bool {
         self.order.remove(key).is_some()
     }
 
@@ -41,7 +40,7 @@ impl ReplacementPolicy for Lru {
     fn name(&self) -> &'static str {
         "lru"
     }
-    fn contains(&self, key: &Key) -> bool {
+    fn contains(&self, key: &K) -> bool {
         self.order.contains(key)
     }
 }

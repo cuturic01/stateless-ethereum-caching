@@ -52,3 +52,39 @@ def iter_blocks(data_dir: Path) -> Iterator[Block]:
 
 def block_count(data_dir: Path) -> int:
     return sum(s["count"] for s in load_manifest(data_dir)["shards"])
+
+
+# --- EIP-6800 stem derivation -------------------------------------------------
+# Must agree exactly with key_to_leaf in caching_strategies/src/witness.rs. The
+# shared fixture at fixtures/stem_derivation.json is what stops the two drifting.
+
+HEADER_STORAGE_OFFSET = 64
+_ZERO31 = bytes(31)
+
+Stem = tuple[bytes, bool, bytes]
+
+
+def key_to_stem(addr: bytes, slot: bytes | None) -> Stem:
+    """The stem a (address, slot) key lives under.
+
+    The account header and storage slots 0..63 share one stem; slots >= 64 group
+    into stems of 256 consecutive slots. Note the header test needs the *whole*
+    slot below 64, not just its low byte: slot 261 has a low byte of 5 but is
+    main storage.
+    """
+    if slot is None:
+        return (addr, False, _ZERO31)
+    high, low = slot[:31], slot[31]
+    if high == _ZERO31 and low < HEADER_STORAGE_OFFSET:
+        return (addr, False, _ZERO31)
+    return (addr, True, high)
+
+
+def key_to_leaf(addr: bytes, slot: bytes | None) -> tuple[Stem, int]:
+    """The stem plus the suffix within it (0..255)."""
+    stem = key_to_stem(addr, slot)
+    if slot is None:
+        return stem, 0
+    if not stem[1]:
+        return stem, HEADER_STORAGE_OFFSET + slot[31]
+    return stem, slot[31]

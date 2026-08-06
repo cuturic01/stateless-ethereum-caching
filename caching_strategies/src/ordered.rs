@@ -1,24 +1,25 @@
+use std::hash::Hash;
+
 use crate::hash::FastMap;
-use crate::model::Key;
 
 const NONE: usize = usize::MAX;
 
-struct Node<V> {
-    key: Key,
+struct Node<K, V> {
+    key: K,
     val: V,
     prev: usize,
     next: usize,
 }
 
-pub struct OrderedMap<V> {
-    nodes: Vec<Node<V>>,
+pub struct OrderedMap<K, V> {
+    nodes: Vec<Node<K, V>>,
     free: Vec<usize>,
-    index: FastMap<Key, usize>,
+    index: FastMap<K, usize>,
     head: usize, // front / LRU
     tail: usize, // back / MRU
 }
 
-impl<V> Default for OrderedMap<V> {
+impl<K, V> Default for OrderedMap<K, V> {
     fn default() -> Self {
         OrderedMap {
             nodes: Vec::new(),
@@ -30,7 +31,7 @@ impl<V> Default for OrderedMap<V> {
     }
 }
 
-impl<V> OrderedMap<V> {
+impl<K: Copy + Eq + Hash, V> OrderedMap<K, V> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -43,11 +44,11 @@ impl<V> OrderedMap<V> {
         self.index.is_empty()
     }
 
-    pub fn contains(&self, key: &Key) -> bool {
+    pub fn contains(&self, key: &K) -> bool {
         self.index.contains_key(key)
     }
 
-    fn alloc(&mut self, key: Key, val: V) -> usize {
+    fn alloc(&mut self, key: K, val: V) -> usize {
         if let Some(slot) = self.free.pop() {
             self.nodes[slot] = Node { key, val, prev: NONE, next: NONE };
             slot
@@ -85,14 +86,14 @@ impl<V> OrderedMap<V> {
         self.tail = i;
     }
 
-    pub fn push_back(&mut self, key: Key, val: V) {
+    pub fn push_back(&mut self, key: K, val: V) {
         debug_assert!(!self.index.contains_key(&key));
         let i = self.alloc(key, val);
         self.index.insert(key, i);
         self.link_back(i);
     }
 
-    pub fn touch_back(&mut self, key: &Key, val: V) -> bool {
+    pub fn touch_back(&mut self, key: &K, val: V) -> bool {
         if let Some(&i) = self.index.get(key) {
             self.unlink(i);
             self.nodes[i].val = val;
@@ -103,7 +104,7 @@ impl<V> OrderedMap<V> {
         }
     }
 
-    pub fn remove(&mut self, key: &Key) -> Option<V>
+    pub fn remove(&mut self, key: &K) -> Option<V>
     where
         V: Default,
     {
@@ -117,7 +118,7 @@ impl<V> OrderedMap<V> {
         }
     }
 
-    pub fn front(&self) -> Option<(Key, &V)> {
+    pub fn front(&self) -> Option<(K, &V)> {
         if self.head == NONE {
             None
         } else {
@@ -126,7 +127,7 @@ impl<V> OrderedMap<V> {
         }
     }
 
-    pub fn pop_front(&mut self) -> Option<(Key, V)>
+    pub fn pop_front(&mut self) -> Option<(K, V)>
     where
         V: Default,
     {

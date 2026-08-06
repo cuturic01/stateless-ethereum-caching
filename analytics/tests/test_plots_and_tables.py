@@ -41,7 +41,8 @@ def test_tables_generate_tex_and_md(synthetic_results, tmp_path):
 
     names = [
         "compression_vs_window", "policy_comparison", "survival_summary",
-        "top_invalidators", "compression_by_stratum",
+        "top_invalidators", "compression_by_stratum", "cache_footprint",
+        "stem_summary",
     ]
     for name in names:
         md = out / f"table_{name}.md"
@@ -54,3 +55,9 @@ def test_tables_generate_tex_and_md(synthetic_results, tmp_path):
     # The freq rank from dataset_stats.json should be attached to a known address.
     top_inv = (out / "table_top_invalidators.md").read_text()
     assert "0xdac17f958d2ee523a2206206994597c13d831ec7" in top_inv
+    assert "USDT" in top_inv, "known contracts should be named alongside the address"
+
+    # Footprint is reported in MB, not raw bytes: a thesis table of 9-digit
+    # byte counts is unreadable.
+    footprint = (out / "table_cache_footprint.md").read_text()
+    assert "peak (MB)" in footprint

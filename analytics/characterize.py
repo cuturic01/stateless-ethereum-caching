@@ -12,17 +12,25 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from analytics_lib.dataio import Block, iter_blocks, load_manifest  # noqa: E402
+from analytics_lib.dataio import Block, iter_blocks, key_to_stem, load_manifest  # noqa: E402
+from analytics_lib.resultio import contract_label  # noqa: E402
 
 console = Console()
 
 WINDOWS = [8, 16, 32, 64, 128]  # block-window sizes the Rust sweep also uses
 N_TOP_CONTRACTS = 30  # size of the "defi" contract set
 GROWTH_SAMPLES = 500  # data points in the cumulative-unique-keys curve
+LEAF_ENTRY_BYTES = 33  # must match caching_strategies/src/witness.rs
 
 
 def _key_hash(addr: bytes, slot: bytes | None) -> int:
     return hash(addr if slot is None else addr + slot)
+
+
+def _stem_hash(addr: bytes, slot: bytes | None) -> int:
+    """Hash of the stem a key lives under, for set membership only."""
+    a, storage, chunk = key_to_stem(addr, slot)
+    return hash((a, storage, chunk))
 
 
 class Pass1:
@@ -42,10 +50,19 @@ class Pass1:
         self.global_keys: set[int] = set()
         self.growth: list[tuple[int, int]] = []  # (block_index, cumulative_unique)
 
-        # Per-window non-overlapping working sets.
+        # Per-window non-overlapping working sets, for leaves and for stems.
+        # The stem series sizes the extension-node cache the same way the leaf
+        # series sizes the leaf cache (extention-plan §7).
         self._acc: dict[int, set[int]] = {n: set() for n in WINDOWS}
         self._cnt: dict[int, int] = {n: 0 for n in WINDOWS}
         self.window_sizes: dict[int, list[int]] = {n: [] for n in WINDOWS}
+        self._stem_acc: dict[int, set[int]] = {n: set() for n in WINDOWS}
+        self.stem_window_sizes: dict[int, list[int]] = {n: [] for n in WINDOWS}
+
+        # Leaves per stem, per block — the 1.32 figure report.md quotes but no
+        # results file currently backs.
+        self.block_leaves: list[int] = []
+        self.block_stems: list[int] = []
 
         # Storage access counts per contract address.
         self.addr_storage_reads: Counter[bytes] = Counter()
@@ -59,12 +76,16 @@ class Pass1:
 
         rs = 0
         block_hashes: set[int] = set()
+        block_stem_hashes: set[int] = set()
         for addr, slot in b.read_set:
             block_hashes.add(_key_hash(addr, slot))
+            block_stem_hashes.add(_stem_hash(addr, slot))
             if slot is not None:
                 rs += 1
                 self.addr_storage_reads[addr] += 1
         self.read_storage.append(rs)
+        self.block_leaves.append(len(block_hashes))
+        self.block_stems.append(len(block_stem_hashes))
 
         ws = 0
         for addr, slot in b.write_set:
@@ -79,10 +100,13 @@ class Pass1:
 
         for n in WINDOWS:
             self._acc[n] |= block_hashes
+            self._stem_acc[n] |= block_stem_hashes
             self._cnt[n] += 1
             if self._cnt[n] == n:
                 self.window_sizes[n].append(len(self._acc[n]))
+                self.stem_window_sizes[n].append(len(self._stem_acc[n]))
                 self._acc[n] = set()
+                self._stem_acc[n] = set()
                 self._cnt[n] = 0
 
     def finalize(self) -> None:
@@ -90,6 +114,7 @@ class Pass1:
         for n in WINDOWS:
             if self._cnt[n] > 0:
                 self.window_sizes[n].append(len(self._acc[n]))
+                self.stem_window_sizes[n].append(len(self._stem_acc[n]))
 
 
 def _stats(arr: list[int]) -> dict:
@@ -170,9 +195,15 @@ def make_plots(p1: Pass1, out: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(WINDOWS, means, "o-", label="mean")
     ax.plot(WINDOWS, maxes, "s--", label="max")
-    ax.set_xlabel("window size (blocks)")
+    # log2 x-axis with explicit ticks: WINDOWS are doublings, and on a linear
+    # axis the first three points crowd into the left fifth of the panel.
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(WINDOWS)
+    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.set_xlabel("retention window N (blocks)")
     ax.set_ylabel("distinct keys in window")
-    ax.set_title("Working set vs window size")
+    ax.set_title("Working set vs window size (non-overlapping windows)")
     ax.legend()
     fig.tight_layout()
     fig.savefig(out / "working_set_vs_window.png", dpi=120)
@@ -181,14 +212,18 @@ def make_plots(p1: Pass1, out: Path) -> None:
     # Top contracts by storage access.
     top = (p1.addr_storage_reads + p1.addr_storage_writes).most_common(20)
     if top:
-        labels = ["0x" + a.hex()[:8] for a, _ in top]
+        # contract_label keeps head *and* tail: five of the top-30 addresses
+        # start with eight zero nibbles and head-only truncation collapsed
+        # them all to "0x00000000".
+        labels = [contract_label("0x" + a.hex()) for a, _ in top]
         vals = [c for _, c in top]
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.barh(range(len(vals)), vals)
         ax.set_yticks(range(len(labels)))
         ax.set_yticklabels(labels, fontsize=7)
         ax.invert_yaxis()
-        ax.set_xlabel("storage accesses (read+write)")
+        ax.set_xlabel("storage accesses, read + write (millions)")
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v / 1e6:g}"))
         ax.set_title("Top 20 contracts by storage access")
         fig.tight_layout()
         fig.savefig(out / "top_contracts.png", dpi=120)
@@ -231,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
     window_working_set = {
         str(n): _stats(p1.window_sizes[n]) for n in WINDOWS
     }
+    window_working_set_stems = {
+        str(n): _stats(p1.stem_window_sizes[n]) for n in WINDOWS
+    }
+    total_leaves = sum(p1.block_leaves)
+    total_stems = sum(p1.block_stems)
     stats = {
         "network": manifest["network"],
         "block_range": [manifest["start_block"], manifest["end_block"]],
@@ -246,14 +286,34 @@ def main(argv: list[str] | None = None) -> int:
             sum(p1.reads) / sum(p1.writes) if sum(p1.writes) else None
         ),
         "window_working_set": window_working_set,
+        "window_working_set_stems": window_working_set_stems,
+        # Distinct read leaves and stems per block, and their ratio. The ratio
+        # is what decides how much extension-node caching can buy: a stem with
+        # one leaf gains nothing, since the pessimistic and explicit rules
+        # coincide there.
+        "leaves_per_block": _stats(p1.block_leaves),
+        "stems_per_block": _stats(p1.block_stems),
+        "leaves_per_stem": (total_leaves / total_stems) if total_stems else None,
         "top_contracts": [
             {"address": "0x" + a.hex(), "storage_accesses": int(c)}
             for a, c in combined.most_common(N_TOP_CONTRACTS)
         ],
-        "memory_projection": {
+        # NOT a cache size. This is the cost of retaining every key the dataset
+        # ever touched, which no run does: it is a loose global upper bound,
+        # orders of magnitude above any simulated cache. The per-run figures are
+        # peak_cache_bytes / mean_cache_bytes in results/runs.parquet — use
+        # those. Charged at LEAF_ENTRY_BYTES so the two numbers at least share a
+        # unit; the old 72 B estimate matched nothing in the witness model.
+        "global_retention_upper_bound": {
             "key_count": len(p1.global_keys),
-            "bytes_per_entry_estimate": 72,  # 32B verkle key + 32B value + metadata
-            "projected_cache_bytes_full_workingset": len(p1.global_keys) * 72,
+            "bytes_per_leaf_entry": LEAF_ENTRY_BYTES,
+            "bytes_if_every_key_ever_touched_were_retained": (
+                len(p1.global_keys) * LEAF_ENTRY_BYTES
+            ),
+            "note": (
+                "Upper bound over the whole dataset, not a per-run cache size. "
+                "See results/runs.parquet peak_cache_bytes for the real figure."
+            ),
         },
     }
     (out / "dataset_stats.json").write_text(json.dumps(stats, indent=2))
@@ -298,14 +358,22 @@ def _write_summary(out: Path, stats: dict, strata: dict) -> None:
         f"p99 {w.get('p99', 0):.0f}, max {w.get('max', 0)}",
         f"- Read/write ratio: {stats['read_write_ratio']}",
         "",
-        "## Working set vs window (distinct keys, non-overlapping windows)",
+        f"- Leaves/block: mean {stats['leaves_per_block'].get('mean', 0):.1f}; "
+        f"stems/block: mean {stats['stems_per_block'].get('mean', 0):.1f}; "
+        f"leaves per stem: {stats['leaves_per_stem'] or 0:.3f}",
         "",
-        "| window (blocks) | mean | max |",
-        "|---|---|---|",
+        "## Working set vs window (distinct, non-overlapping windows)",
+        "",
+        "| window (blocks) | leaves mean | leaves max | stems mean | stems max |",
+        "|---|---|---|---|---|",
     ]
     for n in WINDOWS:
         ws = stats["window_working_set"][str(n)]
-        lines.append(f"| {n} | {ws.get('mean', 0):.0f} | {ws.get('max', 0)} |")
+        st = stats["window_working_set_stems"][str(n)]
+        lines.append(
+            f"| {n} | {ws.get('mean', 0):.0f} | {ws.get('max', 0)} "
+            f"| {st.get('mean', 0):.0f} | {st.get('max', 0)} |"
+        )
     lines += [
         "",
         "## Strata",

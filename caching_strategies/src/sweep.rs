@@ -25,6 +25,7 @@ pub struct SimSpec {
     pub window: u64,
     pub capacity_pct: u32,
     pub capacity_entries: usize,
+    pub stem_capacity_entries: usize,
     pub run_ids: [u32; 3],
 }
 
@@ -35,9 +36,17 @@ pub fn build_grid(params: &DatasetParams) -> Result<Vec<SimSpec>> {
         for &window in &WINDOWS {
             for &pct in &CAPACITY_PCTS {
                 let capacity_entries = params.capacity_entries(window, pct)?;
+                let stem_capacity_entries = params.stem_capacity_entries(window, pct)?;
                 let run_ids = [run_id, run_id + 1, run_id + 2];
                 run_id += 3;
-                specs.push(SimSpec { policy, window, capacity_pct: pct, capacity_entries, run_ids });
+                specs.push(SimSpec {
+                    policy,
+                    window,
+                    capacity_pct: pct,
+                    capacity_entries,
+                    stem_capacity_entries,
+                    run_ids,
+                });
             }
         }
     }
@@ -89,7 +98,11 @@ pub fn run_sweep(cfg: &SweepConfig) -> Result<()> {
     let mut states: Vec<SimState> = specs
         .into_iter()
         .map(|spec| {
-            let cache = WitnessCache::new(spec.policy.build(spec.capacity_entries), spec.window);
+            let cache = WitnessCache::new(
+                spec.policy.build(spec.capacity_entries),
+                spec.policy.build(spec.stem_capacity_entries),
+                spec.window,
+            );
             SimState { spec, cache, metrics: Default::default() }
         })
         .collect();
@@ -153,6 +166,7 @@ pub fn run_sweep(cfg: &SweepConfig) -> Result<()> {
                     st.spec.window as u32,
                     st.spec.capacity_pct,
                     st.spec.capacity_entries as u64,
+                    st.spec.stem_capacity_entries as u64,
                     stratum.name(),
                     m,
                 ));

@@ -10,7 +10,7 @@ fn k(n: u8) -> Key {
 
 /// Drive A,A,B,C so that B is demoted to the b1 ghost list (see module trace).
 /// Returns the cache in that state.
-fn arc_with_b_ghosted() -> Arc {
+fn arc_with_b_ghosted() -> Arc<Key> {
     let mut c = Arc::new(2);
     c.access(k(1)); // A miss -> t1=[A]
     assert!(c.access(k(1)).hit); // A hit -> t2=[A]

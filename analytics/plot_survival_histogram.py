@@ -45,9 +45,14 @@ def make_plots(runs, out: Path, policy="lru", window=32, cap=100) -> None:
         ax.set_xticks(x)
         ax.set_xticklabels(SURVIVAL_LABELS, rotation=45, ha="right", fontsize=7)
         ax.set_xlabel("survival age (blocks)")
-        ax.set_title(f"{stratum}  (mean {mean:.1f})")
-    axes[0].set_ylabel("fraction of evicted entries")
-    fig.suptitle(f"Cache-entry survival (policy={policy.upper()}, N={window}, cap={cap}%)")
+        ax.set_title(f"{stratum}  (mean {mean:.1f} blocks)")
+    # Entries leave by window expiry, write invalidation *or* capacity eviction;
+    # "evicted" named only the third and was the minority cause at cap=100%.
+    axes[0].set_ylabel("fraction of entry removals")
+    fig.suptitle(
+        f"Cache-entry survival (policy={policy.upper()}, N={window}, cap={cap}%)\n"
+        "removal by window expiry, write invalidation or capacity eviction"
+    )
     fig.tight_layout()
     fig.savefig(out / "survival_histogram.png", dpi=120)
     plt.close(fig)
