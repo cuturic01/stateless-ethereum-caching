@@ -14,6 +14,18 @@ from analytics_lib.resultio import CAPS, POLICIES, WINDOWS, load_runs, select  #
 
 console = Console()
 
+POLICY_MARKER = "o"
+
+POLICY_PANEL_CAP = 50
+
+
+def _zoom(ax, *series, pad: float = 0.06) -> None:
+    vals = np.concatenate([np.asarray(s, dtype=float) for s in series])
+    vals = vals[np.isfinite(vals)]
+    lo, hi = float(vals.min()), float(vals.max())
+    margin = (hi - lo) * pad
+    ax.set_ylim(lo - margin, hi + margin)
+
 
 def _comp_by_window(runs, **filters) -> np.ndarray:
     """compression at each window in WINDOWS for the given filters (NaN if absent)."""
@@ -25,18 +37,15 @@ def _comp_by_window(runs, **filters) -> np.ndarray:
 
 
 def make_plots(runs, out: Path) -> None:
-    fig, (axp, axc) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-
+    by_policy = []
     for pol in POLICIES:
-        axp.plot(WINDOWS, _comp_by_window(runs, policy=pol, capacity_pct=100, stratum="all"),
-                 "o-", label=pol.upper())
-    axp.axhline(0.10, ls="--", color="grey", lw=1, label="H1 threshold (0.10)")
-    # H2 predicted a plateau here; the measured curve passes through it smoothly.
-    # Labelled as the prediction, not as an observed feature of the data.
-    axp.axvline(32, ls=":", color="red", lw=1, label="H2 predicted plateau (N = 32)")
+        comp = _comp_by_window(runs, policy=pol, capacity_pct=POLICY_PANEL_CAP, stratum="all")
+        by_policy.append(comp)
+        axp.plot(WINDOWS, comp, marker=POLICY_MARKER, ls="-", label=pol.upper())
+    _zoom(axp, *by_policy)
     axp.set_xlabel("retention window N (blocks)")
     axp.set_ylabel("compression (bytes saved / naive)")
-    axp.set_title("By policy (capacity = 100%)")
+    axp.set_title(f"By policy (capacity = {POLICY_PANEL_CAP}%)")
     axp.set_xscale("log", base=2)
     axp.set_xticks(WINDOWS)
     axp.get_xaxis().set_major_formatter(plt.ScalarFormatter())
@@ -45,9 +54,8 @@ def make_plots(runs, out: Path) -> None:
     for cap in CAPS:
         axc.plot(WINDOWS, _comp_by_window(runs, policy="lru", capacity_pct=cap, stratum="all"),
                  "o-", label=f"{cap}%")
-    # Same marker as the left panel; explained by that panel's legend.
-    axc.axvline(32, ls=":", color="red", lw=1)
     axc.set_xlabel("retention window N (blocks)")
+    axc.set_ylabel("compression (bytes saved / naive)")
     axc.set_title("By capacity (policy = LRU)")
     axc.set_xscale("log", base=2)
     axc.set_xticks(WINDOWS)
@@ -59,23 +67,21 @@ def make_plots(runs, out: Path) -> None:
     fig.savefig(out / "compression_vs_window.png", dpi=120)
     plt.close(fig)
 
-    # Marginal gain per doubling of N (H2, quantified). The sweep steps *are*
-    # doublings, so the step is the natural unit and matches the +0.048/+0.036/
-    # +0.028/+0.021 figures in table_compression_vs_window. Plotted against a
-    # categorical step axis: dividing by ΔN instead puts every point between
-    # two ticks and makes the figure unreadable against the table.
     steps = [f"{WINDOWS[i]}→{WINDOWS[i + 1]}" for i in range(len(WINDOWS) - 1)]
     x = np.arange(len(steps))
     fig, ax = plt.subplots(figsize=(8, 4))
+    gains = []
     for pol in POLICIES:
-        comp = _comp_by_window(runs, policy=pol, capacity_pct=100, stratum="all")
-        ax.plot(x, np.diff(comp), "o-", label=pol.upper())
-    ax.axhline(0, color="grey", lw=0.8)
+        comp = _comp_by_window(runs, policy=pol, capacity_pct=POLICY_PANEL_CAP, stratum="all")
+        gain = np.diff(comp)
+        gains.append(gain)
+        ax.plot(x, gain, marker=POLICY_MARKER, ls="-", label=pol.upper())
+    _zoom(ax, *gains)
     ax.set_xticks(x)
     ax.set_xticklabels(steps)
     ax.set_xlabel("retention window step (blocks)")
     ax.set_ylabel("Δ compression per doubling of N")
-    ax.set_title("Diminishing returns of a larger window (capacity = 100%)")
+    ax.set_title(f"Marginal gain of a larger window (capacity = {POLICY_PANEL_CAP}%)")
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out / "marginal_gain_vs_window.png", dpi=120)
