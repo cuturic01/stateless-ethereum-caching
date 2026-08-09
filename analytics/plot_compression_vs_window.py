@@ -37,6 +37,8 @@ def _comp_by_window(runs, **filters) -> np.ndarray:
 
 
 def make_plots(runs, out: Path) -> None:
+    fig, (axp, axc) = plt.subplots(1, 2, figsize=(11, 4.5))
+
     by_policy = []
     for pol in POLICIES:
         comp = _comp_by_window(runs, policy=pol, capacity_pct=POLICY_PANEL_CAP, stratum="all")

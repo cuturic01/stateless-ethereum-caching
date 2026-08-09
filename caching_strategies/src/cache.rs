@@ -17,6 +17,7 @@ pub struct WitnessCache {
     stem_window: RetentionWindow<StemId>,
     block_stems: Vec<StemId>,
     block_stems_seen: FastSet<StemId>,
+    written_resident: FastSet<Key>,
 }
 
 impl WitnessCache {
@@ -32,6 +33,7 @@ impl WitnessCache {
             stem_window: RetentionWindow::new(window_n),
             block_stems: Vec::new(),
             block_stems_seen: FastSet::default(),
+            written_resident: FastSet::default(),
         }
     }
 
@@ -80,10 +82,17 @@ impl WitnessCache {
 
         let mut wacc = BlockWitnessAccum::default();
 
+        self.written_resident.clear();
+        for w in &rec.writes {
+            if self.policy.contains(w) {
+                self.written_resident.insert(*w);
+            }
+        }
+
         let mut invalidations: u32 = 0;
         let mut stem_invalidations: u32 = 0;
         for w in &rec.writes {
-            wacc.record_leaf(w, false, true);
+            wacc.record_leaf(w, self.written_resident.contains(w), true);
             if self.policy.remove(w) {
                 let last_seen = self.window.remove(w).unwrap_or(now);
                 let age = now.saturating_sub(last_seen);
@@ -114,7 +123,10 @@ impl WitnessCache {
         let mut misses: u32 = 0;
         for r in &rec.reads {
             let out = self.policy.access(*r);
-            wacc.record_leaf(r, out.hit, false);
+            // A key this block also writes was evicted above, so `out.hit` is
+            // false even though the client held it on arrival; the snapshot is
+            // the authority. The hit counter still tracks the cache's own view.
+            wacc.record_leaf(r, out.hit || self.written_resident.contains(r), false);
             if let Some(ev) = out.evicted {
                 let last_seen = self.window.remove(&ev).unwrap_or(now);
                 let age = now.saturating_sub(last_seen);
