@@ -70,6 +70,9 @@ fn slot_below_header_offset(slot: &[u8; SLOT_LEN]) -> bool {
 
 #[derive(Clone, Copy)]
 struct LeafState {
+    /// Residency as of the start of the block, before its writes are applied.
+    /// A write consumes the copy the client already held, so it must not be the
+    /// thing that makes its own leaf look cold.
     resident: bool,
     written: bool,
 }
@@ -139,7 +142,14 @@ pub fn seal(accum: &BlockWitnessAccum) -> BlockWitnessBytes {
 
     for ((stem, _suffix), st) in &accum.leaves {
         let leaf_naive = SUFFIX_BYTES + VALUE_BYTES + if st.written { VALUE_BYTES } else { 0 };
-        let leaf_sent = if st.resident && !st.written { 0 } else { leaf_naive };
+        // A write carries suffix + currentValue + newValue. Only currentValue is
+        // reconstructible from a resident entry, so a written leaf still costs
+        // its suffix and its new value however warm the cache is.
+        let leaf_sent = match (st.resident, st.written) {
+            (true, false) => 0,
+            (true, true) => LEAF_ENTRY_BYTES,
+            (false, _) => leaf_naive,
+        };
 
         let e = stems.entry(*stem).or_default();
         e.leaf_naive += leaf_naive;
@@ -322,11 +332,19 @@ mod tests {
     }
 
     #[test]
-    fn written_leaf_costs_65_and_dirties_a_resident_stem() {
-        let wb = seal(&accum(&[(Key::account(A), true, true)]));
+    fn cold_written_leaf_costs_65_and_dirties_its_stem() {
+        let wb = seal(&accum(&[(Key::account(A), false, true)]));
         assert_eq!(wb.naive, IPA_FLOOR_BYTES + COMMITMENT_BYTES + STEM_SCAFFOLD_BYTES + 65);
         assert_eq!(wb.sent, wb.naive);
         assert_eq!(wb.saved, 0);
+    }
+
+    #[test]
+    fn resident_written_leaf_pays_for_the_new_value_only() {
+        let wb = seal(&accum(&[(Key::account(A), true, true)]));
+        assert_eq!(wb.naive, IPA_FLOOR_BYTES + COMMITMENT_BYTES + STEM_SCAFFOLD_BYTES + 65);
+        assert_eq!(wb.sent, IPA_FLOOR_BYTES + COMMITMENT_BYTES + STEM_SCAFFOLD_BYTES + 33);
+        assert_eq!(wb.saved, VALUE_BYTES);
     }
 
     #[test]
@@ -335,7 +353,7 @@ mod tests {
             (slot_key(A, 300), true, false),
             (slot_key(A, 400), true, true),
         ]));
-        assert_eq!(wb.sent, IPA_FLOOR_BYTES + COMMITMENT_BYTES + STEM_SCAFFOLD_BYTES + 65);
+        assert_eq!(wb.sent, IPA_FLOOR_BYTES + COMMITMENT_BYTES + STEM_SCAFFOLD_BYTES + 33);
     }
 
     #[test]
