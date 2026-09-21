@@ -48,14 +48,14 @@ def make_plots(runs, out: Path, window: int = CANONICAL_WINDOW) -> None:
     axadv.set_xticks(CAPS)
     axadv.legend(fontsize=8)
 
-    fig.suptitle("ARC vs LFU vs LRU (H4)")
+    fig.suptitle("ARC vs LFU vs LRU")
     fig.tight_layout()
     fig.savefig(out / "policy_comparison.png", dpi=120)
     plt.close(fig)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Plot ARC vs LFU vs LRU comparison (H4)")
+    parser = argparse.ArgumentParser(description="Plot ARC vs LFU vs LRU comparison")
     repo_root = Path(__file__).resolve().parents[1]
     parser.add_argument("--results-dir", default=str(repo_root / "results"))
     parser.add_argument("--out", default=str(Path(__file__).resolve().parent / "out" / "results"))
