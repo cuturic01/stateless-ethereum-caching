@@ -111,8 +111,9 @@ is the shared fixture that keeps the two from drifting, checked by
 ## Hypotheses the output supports
 
 - **H1** substantial redundancy: `overall_compression_ratio ≫ 0.10`.
-- **H2** window inflection: compression vs `window` at fixed capacity rises fast
-  to N≈32 then saturates.
+- **H2** retention window: compression vs `window` at fixed capacity rises at
+  every step, with the gain per doubling of N falling at every step. No
+  saturation or inflection is claimed.
 - **H3** invalidation concentration + survival: `contracts/` top-K skew +
   `survival_b*` histogram (expected bimodal: k=1 churn spike + long tail).
 - **H4** policy comparison: `arc` vs `lru`/`lfu` at matched capacity < 100%.

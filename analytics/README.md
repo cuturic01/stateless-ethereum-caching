@@ -55,7 +55,7 @@ Outputs to `out/results/`:
 
 | file | hypothesis | purpose |
 |---|---|---|
-| `compression_vs_window.png`, `marginal_gain_vs_window.png` | H1, H2 | compression rises with window N; marginal gain per doubling of N shows the returns diminishing without reaching a plateau |
+| `compression_vs_window.png`, `marginal_gain_vs_window.png` | H1, H2 | compression rises with window N at every step; marginal gain per doubling of N falls at every step and is still +0.026 at N=128, the edge of the sweep |
 | `compression_vs_capacity.png` | H4 | compression vs capacity, faceted by window |
 | `policy_comparison.png` | H4 | ARC vs LFU vs LRU bars + advantage over LRU (N=32) |
 | `survival_histogram.png` | H3 | entry-survival age distribution per stratum |
